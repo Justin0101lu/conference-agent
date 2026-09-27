@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-UA = {"User-Agent": "conference-agent/0.1 (+https://github.com/justinlu/conference-agent)"}
+UA = {"User-Agent": "conference-agent/0.1 (+https://github.com/Justin0101lu/conference-agent)"}
 
 
 class Enricher:

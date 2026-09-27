@@ -26,7 +26,7 @@ Paid unlock lives in a separate module (`unlock.py`) that refuses to run without
 ## Quick start
 
 ```bash
-git clone https://github.com/justinlu/conference-agent && cd conference-agent
+git clone https://github.com/Justin0101lu/conference-agent && cd conference-agent
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp config.example.yaml config.yaml
