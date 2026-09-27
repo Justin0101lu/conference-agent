@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -88,7 +89,12 @@ class Farm:
     # ------------------------------------------------------------ lifecycle
     def _free_port(self) -> int:
         used = {s.port for s in self.active()}
-        for p in range(5554, 5554 + 2 * MAX_SESSIONS * 2, 2):
+        try:
+            out = subprocess.run([ADB, "devices"], capture_output=True, text=True, timeout=10).stdout
+            used |= {int(m) for m in re.findall(r"emulator-(\d+)", out)}
+        except Exception:  # noqa: BLE001
+            pass
+        for p in range(5554, 5554 + 2 * (MAX_SESSIONS + 4), 2):
             if p not in used:
                 return p
         raise DeviceError("no free emulator port")
@@ -99,11 +105,14 @@ class Farm:
             return
         base_ini = avd_root / f"{BASE_AVD}.ini"
         if base_ini.exists():
-            # clone the base AVD (fast, no sdkmanager)
-            shutil.copytree(avd_root / f"{BASE_AVD}.avd", avd_root / f"{name}.avd", symlinks=True)
+            # clone the base AVD (fast, no sdkmanager). Skip snapshots/locks/caches so the clone is independent.
+            src_dir = avd_root / f"{BASE_AVD}.avd"
+            dst_dir = avd_root / f"{name}.avd"
+            shutil.copytree(src_dir, dst_dir, symlinks=True,
+                            ignore=shutil.ignore_patterns("snapshots", "*.lock", "cache.img*", "*.qcow2.tmp"))
             txt = base_ini.read_text().replace(BASE_AVD, name)
             (avd_root / f"{name}.ini").write_text(txt)
-            cfg = avd_root / f"{name}.avd" / "config.ini"
+            cfg = dst_dir / "config.ini"
             cfg.write_text(cfg.read_text().replace(BASE_AVD, name))
             return
         subprocess.run([AVDMANAGER, "create", "avd", "-n", name, "-k", SYSTEM_IMAGE, "-d", "pixel_6", "--force"],
@@ -119,7 +128,7 @@ class Farm:
         log = open(STATE_DIR / f"{avd}.log", "w")
         proc = subprocess.Popen(
             [EMULATOR, "-avd", avd, "-port", str(port), "-no-window", "-no-audio", "-no-boot-anim",
-             "-gpu", "swiftshader_indirect", "-no-snapshot-save", "-netdelay", "none", "-netspeed", "full"],
+             "-gpu", "swiftshader_indirect", "-no-snapshot-save", "-no-snapshot-load", "-netdelay", "none", "-netspeed", "full"],
             stdout=log, stderr=subprocess.STDOUT, env={**os.environ, "ANDROID_HOME": ANDROID_HOME,
                                                       "ANDROID_SDK_ROOT": ANDROID_HOME},
             start_new_session=True)
