@@ -23,8 +23,8 @@ ANDROID_HOME = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROO
     "~/Library/Android/sdk")
 EMULATOR = shutil.which("emulator") or f"{ANDROID_HOME}/emulator/emulator"
 AVDMANAGER = shutil.which("avdmanager") or f"{ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
-BASE_AVD = os.environ.get("FARM_BASE_AVD", "farm0")
-SYSTEM_IMAGE = os.environ.get("FARM_SYSTEM_IMAGE", "system-images;android-34;google_apis;arm64-v8a")
+BASE_AVD = os.environ.get("FARM_BASE_AVD", "farm_play")
+SYSTEM_IMAGE = os.environ.get("FARM_SYSTEM_IMAGE", "system-images;android-34;google_apis_playstore;arm64-v8a")
 STATE_DIR = Path(os.environ.get("FARM_STATE_DIR", os.path.expanduser("~/.conference-agent/farm")))
 MAX_SESSIONS = int(os.environ.get("FARM_MAX_SESSIONS", "3"))
 IDLE_TIMEOUT_S = int(os.environ.get("FARM_IDLE_TIMEOUT_S", str(2 * 3600)))

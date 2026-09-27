@@ -11,6 +11,7 @@ export PATH=$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/
 export FARM_TOKEN=${FARM_TOKEN:-$(python3 -c 'import secrets;print(secrets.token_urlsafe(16))')}
 export FARM_PORT=${FARM_PORT:-8765}
 export FARM_MAX_SESSIONS=${FARM_MAX_SESSIONS:-3}
+export FARM_BASE_AVD=${FARM_BASE_AVD:-farm_play}
 mkdir -p ~/.conference-agent/farm
 echo "FARM_TOKEN=$FARM_TOKEN" | tee ~/.conference-agent/farm/token.env
 PY=${PY:-.venv/bin/python}
