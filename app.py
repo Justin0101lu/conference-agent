@@ -32,6 +32,24 @@ st.caption("Your website → ICP. Your phone's conference app → attendee list.
            "who's worth meeting. Your voice → meeting requests, sent by the agent. **Zero ZoomInfo credits for research.**")
 
 S = st.session_state
+
+
+def _secret(name: str) -> str:
+    """Env var, or Streamlit Cloud secret."""
+    v = os.getenv(name, "")
+    if not v:
+        try:
+            v = str(st.secrets.get(name, ""))
+        except Exception:  # noqa: BLE001
+            v = ""
+    return v
+
+
+for _k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ZOOMINFO_CLIENT_ID", "ZOOMINFO_CLIENT_SECRET",
+           "ZOOMINFO_USERNAME", "ZOOMINFO_PASSWORD", "STRIPE_SECRET_KEY", "STRIPE_PRICE_CENTS", "APP_BASE_URL"):
+    if _secret(_k) and not os.getenv(_k):
+        os.environ[_k] = _secret(_k)
+
 S.setdefault("cfg", load_config(CFG_PATH))
 cfg = S["cfg"]
 
@@ -43,7 +61,9 @@ with st.sidebar:
     llm["model"] = st.text_input("Model (text)", llm.get("model") or ("gpt-4o-mini" if llm["provider"] == "openai" else "claude-3-5-haiku-latest"))
     llm["vision_model"] = st.text_input("Model (vision, for phone screenshots)", llm.get("vision_model") or ("gpt-4o" if llm["provider"] == "openai" else "claude-3-5-sonnet-latest"))
     env_key = "OPENAI_API_KEY" if llm["provider"] == "openai" else "ANTHROPIC_API_KEY"
-    llm["api_key"] = st.text_input(env_key, llm.get("api_key") or os.getenv(env_key, ""), type="password")
+    _typed = st.text_input(env_key, llm.get("api_key") or _secret(env_key), type="password",
+                           help="Pre-filled from the server's secret if one is configured.")
+    llm["api_key"] = _typed or _secret(env_key)
 
     zi = cfg.setdefault("zoominfo", {})
     zi["enabled"] = st.checkbox("ZoomInfo (search only — free)", zi.get("enabled", True))
@@ -60,11 +80,13 @@ with st.sidebar:
     st.download_button("⬇️ Export config.yaml", yaml.safe_dump({k: v for k, v in cfg.items()}, sort_keys=False),
                        "config.yaml", "text/yaml")
 
-tabs = st.tabs(["1 · Your company", "2 · Attendees (phone)", "3 · Research & qualify", "4 · Approve & send",
-                "5 · Unlock contacts (paid)", "⚙️ Calibrate phone"])
+STEPS = ["1 · Your company", "2 · Attendees (phone)", "3 · Research & qualify", "4 · Approve & send",
+         "5 · Unlock contacts (paid)", "⚙️ Calibrate phone"]
+S.setdefault("step", STEPS[0])
+S["step"] = st.radio("Step", STEPS, index=STEPS.index(S["step"]), horizontal=True, label_visibility="collapsed")
 
 # ============================================================ 1 · onboarding
-with tabs[0]:
+if S["step"] == STEPS[0]:
     st.subheader("Tell the agent who you are — paste your website")
     c1, c2 = st.columns([3, 1])
     url = c1.text_input("Website", cfg.get("seller", {}).get("website", ""), placeholder="https://truckpedia.io")
@@ -91,7 +113,7 @@ with tabs[0]:
                                    help="{first_name} {company_description} {company} {sender}. Only {company_description} is AI-written.")
 
 # ========================================================= 2 · attendee list
-with tabs[1]:
+if S["step"] == STEPS[1]:
     st.subheader("Pull the attendee list from the conference app on your phone")
     st.markdown("**Setup (macOS):** open *iPhone Mirroring*, **lock your phone**, open the conference app to the "
                 "attendee list. Keep the mirroring window visible and don't touch the mouse during capture.")
@@ -120,7 +142,9 @@ with tabs[1]:
             st.error(str(e))
     st.markdown("**…or upload / paste a list**")
     up = st.file_uploader("CSV with name / title / company", type=["csv"])
-    raw = st.text_area("Paste `Name | Title | Company` per line", height=120)
+    with st.form("paste_form", border=False):
+        raw = st.text_area("Paste `Name | Title | Company` per line", height=120)
+        st.form_submit_button("Use pasted list")
     if up is not None:
         S["attendees"] = parse_attendees(pd.read_csv(up).fillna("").to_dict("records"))
     elif raw.strip():
@@ -137,7 +161,7 @@ with tabs[1]:
         st.dataframe(pd.DataFrame(S["attendees"]), use_container_width=True, height=260)
 
 # ======================================================== 3 · research
-with tabs[2]:
+if S["step"] == STEPS[2]:
     st.subheader("Research every attendee, keep the ones that fit")
     att = S.get("attendees") or []
     if not att:
@@ -192,7 +216,7 @@ with tabs[2]:
         st.download_button("⬇️ results.json", json.dumps(res, indent=1), "results.json")
 
 # ====================================================== 4 · approve & send
-with tabs[3]:
+if S["step"] == STEPS[3]:
     st.subheader("Approve each message, then let the agent send them through the phone")
     res = S.get("results") or []
     fit = [r for r in res if r["icp_fit"]]
@@ -239,7 +263,7 @@ with tabs[3]:
         st.download_button("⬇️ outreach.csv (manual sending)", buf.getvalue(), "outreach.csv", "text/csv")
 
 # ====================================================== 5 · paid unlock
-with tabs[4]:
+if S["step"] == STEPS[4]:
     st.subheader("Unlock email · phone · LinkedIn for CRM sync")
     st.markdown(f"Research never spends ZoomInfo credits. Unlocking does — **${unlock.price_cents()/100:.2f} per contact**, "
                 "billed via Stripe, then enriched through ZoomInfo on the operator's account and handed to you as a CRM-ready CSV.")
@@ -283,7 +307,7 @@ with tabs[4]:
             st.download_button("⬇️ CRM import CSV", unlock.crm_csv(S["unlocked"], fmt), f"contacts_{fmt}.csv", "text/csv")
 
 # ========================================================= calibrate
-with tabs[5]:
+if S["step"] == STEPS[5]:
     st.subheader("Calibrate tap points for your conference app")
     st.caption("Points are screenshot pixels (2× Retina). Take a screenshot of each screen, hover to read coordinates, "
                "and set them here. Save as a new recipe YAML in `conference_agent/recipes/`.")
