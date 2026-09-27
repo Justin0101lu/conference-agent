@@ -6,3 +6,5 @@ openai>=1.40
 anthropic>=0.34
 pytest>=8
 pillow>=10
+fastapi>=0.110
+uvicorn>=0.29

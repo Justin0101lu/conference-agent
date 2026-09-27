@@ -5,6 +5,7 @@ Flow:  1 Your website -> ICP & template   2 Phone: capture attendee list   3 Res
 """
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -17,6 +18,7 @@ import streamlit as st
 import yaml
 
 from conference_agent import phone, unlock
+from conference_agent.farm.client import FarmClient
 from conference_agent.onboarding import derive_profile
 from conference_agent.pipeline import load_config, make_zi, parse_attendees, run
 from conference_agent.zoominfo import CreditGuardError
@@ -77,6 +79,13 @@ with st.sidebar:
             zi["password"] = st.text_input("Password", zi.get("password", ""), type="password")
         st.caption("🔒 Research calls only `/companies/search` + `/contacts/search`. Enrich/lookup/bulk are blocked in code.")
     st.divider()
+    st.subheader("☁️ Cloud phone")
+    farm_cfg = cfg.setdefault("farm", {})
+    farm_cfg["url"] = st.text_input("Farm URL", farm_cfg.get("url") or _secret("FARM_URL"),
+                                    placeholder="https://xxxx.trycloudflare.com")
+    farm_cfg["token"] = st.text_input("Farm token", farm_cfg.get("token") or _secret("FARM_TOKEN"), type="password")
+    st.caption("An Android emulator we host. You log into the conference app on it; the agent drives it from there.")
+    st.divider()
     st.download_button("⬇️ Export config.yaml", yaml.safe_dump({k: v for k, v in cfg.items()}, sort_keys=False),
                        "config.yaml", "text/yaml")
 
@@ -114,48 +123,106 @@ if S["step"] == STEPS[0]:
 
 # ========================================================= 2 · attendee list
 if S["step"] == STEPS[1]:
-    st.subheader("Pull the attendee list from the conference app on your phone")
-    st.markdown("**Setup (macOS):** open *iPhone Mirroring*, **lock your phone**, open the conference app to the "
-                "attendee list. Keep the mirroring window visible and don't touch the mouse during capture.")
-    avail = phone.is_available()
-    st.info("iPhone Mirroring detected ✅" if avail else "iPhone Mirroring not running — you can still upload a CSV below.",
-            icon="📱" if avail else "⚠️")
-    rc1, rc2 = st.columns([1, 2])
-    recipe_name = rc1.selectbox("App recipe", phone.Recipe.available(), index=max(0, phone.Recipe.available().index("trimble_insight") if "trimble_insight" in phone.Recipe.available() else 0))
-    S["recipe"] = phone.Recipe.load(recipe_name)
-    rc2.caption(S["recipe"].data.get("notes", ""))
-    max_screens = st.slider("Max screens to scroll", 5, 400, 120)
-    if st.button("📸 Capture attendee list from phone", disabled=not avail, type="primary"):
-        out_dir = WORK / f"screens_{int(time.time())}"
-        bar = st.progress(0.0, "Scrolling…")
-        tbl = st.empty()
+    st.subheader("Pull the attendee list from the conference app")
+    src_choice = st.radio("Where is the conference app?", ["☁️ Cloud phone (works from any device)",
+                                                           "📱 My iPhone via Mac mirroring", "📄 Upload / paste a list"],
+                          horizontal=True, label_visibility="collapsed")
+    S["src_choice"] = src_choice
+    if src_choice.startswith("☁️"):
+        fc = FarmClient(cfg["farm"]["url"], cfg["farm"]["token"]) if cfg.get("farm", {}).get("url") else None
+        if not fc:
+            st.warning("No farm configured — set Farm URL + token in the sidebar (operator provides these).")
+        else:
+            sid = S.get("farm_sid")
+            if not sid:
+                st.markdown("Get a cloud Android phone, install the conference app from the Play Store, log in, "
+                            "open the attendee list — then the agent takes over.")
+                if st.button("📲 Get a cloud phone", type="primary"):
+                    try:
+                        r = fc.create(); S["farm_sid"] = r["id"]; st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(str(e))
+            else:
+                try:
+                    stt = fc.status(sid)
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"Farm unreachable: {e}"); stt = {"status": "error"}
+                if stt["status"] == "booting":
+                    st.info("Phone booting (30–90 s)…"); time.sleep(4); st.rerun()
+                elif stt["status"] == "ready":
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        st.components.v1.iframe(fc.view_url(sid), height=720)
+                    with c2:
+                        st.markdown("**On the phone:** open Play Store → install your conference app → log in → "
+                                    "open the attendee list. Then:")
+                        pkg = st.text_input("Play Store package (optional shortcut)", placeholder="com.cvent.mobile.attendee")
+                        if pkg and st.button("Open in Play Store"):
+                            fc.install(sid, package=pkg)
+                        if st.button("📸 Capture attendee list", type="primary"):
+                            job = fc.capture(sid, cfg)
+                            bar = st.progress(0.0); tbl = st.empty()
+                            while True:
+                                j = fc.job(job)
+                                rows = j.get("rows", [])
+                                bar.progress(min(0.99, j.get("screens", 0) / 100), f"screen {j.get('screens',0)} · {len(rows)} attendees")
+                                if rows:
+                                    tbl.dataframe(pd.DataFrame(rows)[["name", "title", "company"]], height=240, use_container_width=True)
+                                if j["status"] in ("done", "error"):
+                                    break
+                                time.sleep(3)
+                            if j["status"] == "error":
+                                st.error(j.get("error"))
+                            else:
+                                S["attendees"] = parse_attendees(rows); bar.progress(1.0, f"Done — {len(rows)} attendees")
+                        if st.button("Release phone"):
+                            fc.stop(sid); S.pop("farm_sid", None); st.rerun()
+                else:
+                    st.error(f"Phone session {stt['status']}: {stt.get('error','')}")
+                    if st.button("Start over"):
+                        S.pop("farm_sid", None); st.rerun()
+    if src_choice.startswith("📱"):
+        st.markdown("**Setup (macOS):** open *iPhone Mirroring*, **lock your phone**, open the conference app to the "
+                    "attendee list. Keep the mirroring window visible and don't touch the mouse during capture.")
+        avail = phone.is_available()
+        st.info("iPhone Mirroring detected ✅" if avail else "iPhone Mirroring not running — you can still upload a CSV below.",
+                icon="📱" if avail else "⚠️")
+        rc1, rc2 = st.columns([1, 2])
+        recipe_name = rc1.selectbox("App recipe", phone.Recipe.available(), index=max(0, phone.Recipe.available().index("trimble_insight") if "trimble_insight" in phone.Recipe.available() else 0))
+        S["recipe"] = phone.Recipe.load(recipe_name)
+        rc2.caption(S["recipe"].data.get("notes", ""))
+        max_screens = st.slider("Max screens to scroll", 5, 400, 120)
+        if st.button("📸 Capture attendee list from phone", disabled=not avail, type="primary"):
+            out_dir = WORK / f"screens_{int(time.time())}"
+            bar = st.progress(0.0, "Scrolling…")
+            tbl = st.empty()
 
-        def _p(i, rows):
-            bar.progress(min(1.0, i / max_screens), f"screen {i} · {len(rows)} attendees so far")
-            tbl.dataframe(pd.DataFrame(rows)[["name", "title", "company"]], height=240, use_container_width=True)
+            def _p(i, rows):
+                bar.progress(min(1.0, i / max_screens), f"screen {i} · {len(rows)} attendees so far")
+                tbl.dataframe(pd.DataFrame(rows)[["name", "title", "company"]], height=240, use_container_width=True)
 
-        try:
-            rows = phone.capture_attendee_list(cfg, S["recipe"], str(out_dir), max_screens=max_screens, progress=_p)
+            try:
+                rows = phone.capture_attendee_list(cfg, S["recipe"], str(out_dir), max_screens=max_screens, progress=_p)
+                S["attendees"] = parse_attendees(rows)
+                bar.progress(1.0, f"Done — {len(S['attendees'])} attendees")
+            except phone.PhoneError as e:
+                st.error(str(e))
+    if src_choice.startswith("📄"):
+        up = st.file_uploader("CSV with name / title / company", type=["csv"])
+        with st.form("paste_form", border=False):
+            raw = st.text_area("Paste `Name | Title | Company` per line", height=120)
+            st.form_submit_button("Use pasted list")
+        if up is not None:
+            S["attendees"] = parse_attendees(pd.read_csv(up).fillna("").to_dict("records"))
+        elif raw.strip():
+            rows = []
+            for line in raw.strip().splitlines():
+                p = [x.strip() for x in line.split("|")]
+                if len(p) >= 3:
+                    rows.append({"name": p[0], "title": p[1], "company": p[2]})
+                elif len(p) == 2:
+                    rows.append({"name": p[0], "title": "", "company": p[1]})
             S["attendees"] = parse_attendees(rows)
-            bar.progress(1.0, f"Done — {len(S['attendees'])} attendees")
-        except phone.PhoneError as e:
-            st.error(str(e))
-    st.markdown("**…or upload / paste a list**")
-    up = st.file_uploader("CSV with name / title / company", type=["csv"])
-    with st.form("paste_form", border=False):
-        raw = st.text_area("Paste `Name | Title | Company` per line", height=120)
-        st.form_submit_button("Use pasted list")
-    if up is not None:
-        S["attendees"] = parse_attendees(pd.read_csv(up).fillna("").to_dict("records"))
-    elif raw.strip():
-        rows = []
-        for line in raw.strip().splitlines():
-            p = [x.strip() for x in line.split("|")]
-            if len(p) >= 3:
-                rows.append({"name": p[0], "title": p[1], "company": p[2]})
-            elif len(p) == 2:
-                rows.append({"name": p[0], "title": "", "company": p[1]})
-        S["attendees"] = parse_attendees(rows)
     if S.get("attendees"):
         st.success(f"{len(S['attendees'])} attendees ready")
         st.dataframe(pd.DataFrame(S["attendees"]), use_container_width=True, height=260)
@@ -239,11 +306,34 @@ if S["step"] == STEPS[3]:
                 S["edited"][r["name"]] = st.text_area("message", S["edited"].get(r["name"], r["message"]),
                                                        key=f"msg_{r['name']}", height=180, label_visibility="collapsed")
         st.divider()
-        avail = phone.is_available()
         dry = st.checkbox("Dry run (compose but don't tap Send)", True)
-        st.caption("The agent opens each profile via the app's search, verifies the name with vision, pastes the "
-                   "message, and taps Send. Keep iPhone Mirroring visible; don't touch the mouse.")
-        if st.button("📨 Send approved messages via phone", type="primary", disabled=not avail):
+        targets_all = [r for r in fit if S["approved"].get(r["name"])]
+        if S.get("farm_sid") and cfg.get("farm", {}).get("url"):
+            st.caption("Sends through your **cloud phone** (must still be logged into the conference app, on any screen).")
+            if st.button(f"☁️ Send {len(targets_all)} approved via cloud phone", type="primary"):
+                fc = FarmClient(cfg["farm"]["url"], cfg["farm"]["token"])
+                tg = [{"name": r["name"], "title": r.get("title", ""), "company": r["company"],
+                       "message": S["edited"].get(r["name"], r["message"])} for r in targets_all]
+                job = fc.send(S["farm_sid"], cfg, tg, dry_run=dry)
+                bar = st.progress(0.0); log_box = st.empty()
+                while True:
+                    j = fc.job(job); logs = j.get("logs", [])
+                    bar.progress(min(0.99, len(logs) / max(1, len(tg))), f"{len(logs)}/{len(tg)}")
+                    if logs:
+                        log_box.dataframe(pd.DataFrame(logs)[["name", "ok", "step", "detail"]], use_container_width=True)
+                    if j["status"] in ("done", "error"):
+                        break
+                    time.sleep(3)
+                bar.progress(1.0, f"Done · {sum(1 for l in logs if l.get('ok'))}/{len(tg)} ok")
+                S["send_log"] = logs
+                for l in logs:
+                    if l.get("screenshot_b64"):
+                        with st.expander(f"📷 {l['name']} — composed"):
+                            st.image(base64.b64decode(l["screenshot_b64"]), width=300)
+        avail = phone.is_available()
+        st.caption("Or via iPhone Mirroring on this Mac: the agent opens each profile via the app's search, verifies the "
+                   "name with vision, pastes the message, and taps Send. Keep the mirroring window visible.")
+        if st.button("📨 Send approved messages via iPhone Mirroring", disabled=not avail):
             targets = [r for r in fit if S["approved"].get(r["name"])]
             bar = st.progress(0.0)
             log_box = st.empty()
