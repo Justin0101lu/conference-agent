@@ -1,0 +1,21 @@
+# Generic starting recipe. Calibrate every point in the UI (Calibrate tab) before a live run.
+name: generic
+notes: Fill in from a screenshot of your conference app. Points are screenshot pixels (2x Retina).
+scroll_anchor: [344, 764]
+scroll_ticks: 80
+scroll_settle_s: 1.2
+search_box: [344, 250]
+search_settle_s: 2.0
+first_result: [344, 450]
+paste_offset: [180, 10]
+vision_paste: true
+points:
+  scroll_anchor: [344, 764]
+  search_box: [344, 250]
+  first_result: [344, 450]
+  message_button: [344, 500]
+  message_field: [300, 400]
+  send_button: [630, 165]
+  back_button: [30, 175]
+back_taps_after_send: 2
+back_taps_after_compose: 3

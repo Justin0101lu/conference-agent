@@ -1,0 +1,8 @@
+streamlit>=1.38
+requests>=2.31
+pandas>=2.0
+pyyaml>=6
+openai>=1.40
+anthropic>=0.34
+pytest>=8
+pillow>=10

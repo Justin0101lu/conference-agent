@@ -1,0 +1,25 @@
+# Recipe for the Trimble Insight conference app (Cvent-style), calibrated Sep 2026 on iPhone Mirroring.
+# All points are SCREENSHOT PIXELS (2x Retina, ~688x1528). Re-calibrate in the app's "Calibrate" tab if the
+# app updates its layout.
+name: trimble_insight
+notes: |
+  Attendees tab -> list. Tap a row -> profile. "Message"/"Request meeting" button under the header.
+  Text field -> right-click -> iOS Paste popup -> Send (top-right) -> back arrow (top-left).
+scroll_anchor: [344, 764]        # middle of the list
+scroll_ticks: 80                 # ~one screen
+scroll_settle_s: 1.2
+search_box: [344, 250]
+search_settle_s: 2.0
+first_result: [344, 450]
+paste_offset: [180, 10]          # where "Paste" appears relative to the right-click point
+vision_paste: true               # use the LLM to locate the Paste button (more robust)
+points:
+  scroll_anchor: [344, 764]
+  search_box: [344, 250]
+  first_result: [344, 450]
+  message_button: [330, 460]
+  message_field: [200, 400]
+  send_button: [630, 165]
+  back_button: [30, 175]
+back_taps_after_send: 2
+back_taps_after_compose: 3

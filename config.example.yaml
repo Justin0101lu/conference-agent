@@ -1,0 +1,50 @@
+# conference-agent config
+# Copy to config.yaml and edit. Secrets can also come from env vars (preferred for hosting):
+#   ZOOMINFO_CLIENT_ID / ZOOMINFO_CLIENT_SECRET   (GTM API, OAuth client credentials)
+#   ZOOMINFO_USERNAME / ZOOMINFO_PASSWORD         (legacy Enterprise API)
+#   OPENAI_API_KEY or ANTHROPIC_API_KEY
+
+seller:
+  company: Truckpedia
+  sender_name: Justin
+  what_we_do: >-
+    AI agents for trucking companies that run inside a TMS, emails, and driver messages —
+    dispatch matching, load acceptance, invoicing, POD chasing, collections, driver pay.
+    Runs on top of an existing TMS or Truckpedia's own TMS.
+
+icp:
+  description: >-
+    Trucking, transportation, and logistics companies of any fleet size — asset carriers,
+    private fleets, brokers with assets, drayage, bulk, LTL, reefer, flatbed.
+  exclude: >-
+    Software vendors, SaaS, consultants, TMS/ELD/telematics providers, media, event organizers, investors.
+
+# Public-data enrichers to run (see conference_agent/enrichers.py). Order = run order.
+enrichers:
+  - fmcsa   # US DOT carrier census — trucking only; remove for other industries
+  - web
+
+zoominfo:
+  enabled: true
+  mode: gtm            # gtm (OAuth client credentials) | legacy (username/password)
+  # client_id: ""
+  # client_secret: ""
+  # NOTE: this product only calls ZoomInfo *Search* endpoints (free). Enrich/lookup/bulk are
+  # hard-blocked in code (conference_agent/zoominfo.py::CreditGuardError). No emails or phone
+  # numbers are ever fetched — you only see hasEmail / hasDirectPhone / hasMobile hints.
+
+llm:
+  provider: openai      # openai | anthropic
+  model: gpt-4o-mini
+
+message:
+  # Placeholders: {first_name} {company_description} {company} {sender}
+  template: |
+    Hi {first_name},
+
+    I build AI agents for companies like yours - {company_description}. Our AI agents run inside a TMS, emails, and driver messages to auto-match the best driver to each load, look for new loads, calculate settlements, and chase payments without anyone touching a spreadsheet or TMS screen. Runs on top of your existing TMS or ours.
+
+    Open for a quick chat? Not trying to sell anything. Just to connect and share.
+
+    Thanks,
+    {sender}
