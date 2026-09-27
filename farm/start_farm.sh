@@ -14,12 +14,14 @@ export FARM_MAX_SESSIONS=${FARM_MAX_SESSIONS:-3}
 mkdir -p ~/.conference-agent/farm
 echo "FARM_TOKEN=$FARM_TOKEN" | tee ~/.conference-agent/farm/token.env
 PY=${PY:-.venv/bin/python}
-$PY -m uvicorn conference_agent.farm.server:app --host 0.0.0.0 --port "$FARM_PORT" > ~/.conference-agent/farm/server.log 2>&1 &
+nohup $PY -m uvicorn conference_agent.farm.server:app --host 0.0.0.0 --port "$FARM_PORT" > ~/.conference-agent/farm/server.log 2>&1 &
+disown
 echo "farm api pid $! on http://localhost:$FARM_PORT"
 if [ "${TUNNEL:-0}" = "1" ]; then
   command -v cloudflared >/dev/null || brew install cloudflared
-  cloudflared tunnel --url "http://localhost:$FARM_PORT" > ~/.conference-agent/farm/tunnel.log 2>&1 &
-  sleep 6
+  nohup cloudflared tunnel --url "http://localhost:$FARM_PORT" > ~/.conference-agent/farm/tunnel.log 2>&1 &
+  disown
+  sleep 10
   URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' ~/.conference-agent/farm/tunnel.log | head -1)
   echo "FARM_URL=$URL" | tee -a ~/.conference-agent/farm/token.env
 fi

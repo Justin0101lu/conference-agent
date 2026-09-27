@@ -72,10 +72,17 @@ def _dev(sid: str):
 
 
 @app.get("/sessions/{sid}/screen.png", dependencies=[Depends(auth)])
-def screen(sid: str):
+def screen(sid: str, q: int = 55, scale: float = 0.5):
+    """Live frame. Served as JPEG at half-res by default (~40KB) so it streams fine over a tunnel."""
+    import io
+    from PIL import Image
     d = _dev(sid)
     data = d.adb("exec-out", "screencap", "-p", binary=True)
-    return Response(content=data, media_type="image/png", headers={"Cache-Control": "no-store"})
+    im = Image.open(io.BytesIO(data)).convert("RGB")  # type: ignore[arg-type]
+    if scale != 1:
+        im = im.resize((int(im.width * scale), int(im.height * scale)))
+    buf = io.BytesIO(); im.save(buf, "JPEG", quality=q, optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 class Tap(BaseModel):
@@ -211,8 +218,8 @@ img{{max-height:80vh;border:1px solid #444;border-radius:12px;touch-action:none}
 <script>
 const H={{'X-Farm-Token':'{FARM_TOKEN}','Content-Type':'application/json'}};const img=document.getElementById('s');
 let nat=[1080,2400];let down=null;
-async function refresh(){{const r=await fetch('/sessions/{sid}/screen.png?t='+Date.now(),{{headers:H}});const b=await r.blob();const u=URL.createObjectURL(b);const i=new Image();i.onload=()=>{{nat=[i.naturalWidth,i.naturalHeight];img.src=u}};i.src=u;}}
-setInterval(refresh,1200);refresh();
+async function refresh(){{const r=await fetch('/sessions/{sid}/screen.png?t='+Date.now(),{{headers:H}});const b=await r.blob();const u=URL.createObjectURL(b);const i=new Image();i.onload=()=>{{nat=[i.naturalWidth*2,i.naturalHeight*2];img.src=u}};i.src=u;}}
+setInterval(refresh,700);refresh();
 function pos(e){{const r=img.getBoundingClientRect();const p=e.touches?e.touches[0]:e;return [Math.round((p.clientX-r.left)/r.width*nat[0]),Math.round((p.clientY-r.top)/r.height*nat[1])];}}
 img.addEventListener('pointerdown',e=>{{down=pos(e);e.preventDefault();}});
 img.addEventListener('pointerup',async e=>{{if(!down)return;const up=pos(e);const d=Math.hypot(up[0]-down[0],up[1]-down[1]);

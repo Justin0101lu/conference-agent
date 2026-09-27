@@ -8,7 +8,8 @@ Most conference apps (Cvent, Swapcard, Whova, Trimble Insight…) list attendees
 2. **Mirror your phone** (macOS iPhone Mirroring) → the agent scrolls the attendee list in the conference app, screenshots every screen, and reads out every name / title / company with vision.
 3. **Research every attendee** → free ZoomInfo search (title, seniority, *whether* they have an email/phone — without unlocking it), FMCSA carrier census (trucking), web search + homepage. An LLM decides fit / skip with a reason and writes a one-line description of what *their* company does.
 4. **Approve** → each message is your template with one swapped clause. Edit, tick, and the agent opens each profile in the app via search, **verifies the name with vision**, pastes your message and taps Send.
-5. **Unlock (paid)** → if you want email, phone and LinkedIn to sync to your CRM, pay per contact (Stripe) and get a HubSpot / Salesforce-ready CSV. Research itself never spends a credit.
+5. **Or use a cloud phone** → no Mac? Click *Get a cloud phone*: a real Android phone appears in your browser. Install the conference app, log in, open the attendee list — the agent reads it through the accessibility tree and sends your approved messages on that phone. See [`farm/README.md`](farm/README.md). Free to self-host.
+6. **Unlock (paid)** → if you want email, phone and LinkedIn to sync to your CRM, pay per contact (Stripe) and get a HubSpot / Salesforce-ready CSV. Research itself never spends a credit.
 
 Built by [Justin Lu](https://truckpedia.io) after running it live at a trucking conference. Works for any industry — the trucking bits (FMCSA) are just a plugin.
 
@@ -67,7 +68,8 @@ Only `{company_description}` is AI-written (6–14 words, e.g. *"dry bulk carrie
 ## Hosting
 
 - **Research + approve + unlock**: any host — Streamlit Community Cloud, Docker (`Dockerfile` included), Fly, Railway.
-- **Phone capture + auto-send**: must run on the Mac that has iPhone Mirroring (the host build shows those buttons disabled). Typical setup: host the web app, and run `streamlit run app.py` locally on show days.
+- **Cloud phone farm**: `farm/start_farm.sh` on any machine with the Android emulator (your Mac, a KVM Linux box, Oracle Always-Free ARM). Exposed via a free Cloudflare tunnel; the hosted app talks to it with `FARM_URL` + `FARM_TOKEN`.
+- **iPhone Mirroring path**: Mac-only, for the live demo.
 
 ## Tests
 
