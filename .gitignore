@@ -6,3 +6,4 @@ results/
 .streamlit/secrets.toml
 .DS_Store
 *.egg-info/
+farm/ws-scrcpy/

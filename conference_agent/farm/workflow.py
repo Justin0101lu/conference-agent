@@ -161,7 +161,32 @@ def capture_attendees(d: AndroidDevice, cfg: dict, max_scrolls: int = 300,
             break
         d.scroll_down(0.7)
         time.sleep(0.8)
-    return list(seen.values())
+    return _llm_clean_rows(cfg, list(seen.values()))
+
+
+_UI_WORDS = re.compile(r"\b(search|create|add|filter|sort|settings|menu|back|next|skip|sign in|log ?in|"
+                       r"contacts|attendees|sponsors|exhibitors|agenda|schedule|more|options|navigation)\b", re.I)
+
+
+def _llm_clean_rows(cfg: dict, rows: list[dict]) -> list[dict]:
+    """Drop UI chrome that looks like a name; ask the LLM only about the ambiguous ones."""
+    keep, ask = [], []
+    for r in rows:
+        if _UI_WORDS.search(r["name"]):
+            continue
+        (ask if not r["company"] and not r["title"] else keep).append(r)
+    if ask and cfg.get("llm"):
+        try:
+            sys_p = ("Given labels scraped from a mobile attendee list, return ONLY JSON: "
+                     '{"people": ["<labels that are real person names>"]}. Exclude buttons, sections, headers.')
+            out = _json(_complete(cfg, sys_p, "\n".join(r["name"] for r in ask[:300]), 1500))
+            ok = {p.strip().lower() for p in out.get("people", [])}
+            keep += [r for r in ask if r["name"].lower() in ok]
+        except Exception:  # noqa: BLE001
+            keep += ask
+    else:
+        keep += ask
+    return keep
 
 
 # --------------------------------------------------------------------- send
@@ -199,8 +224,12 @@ def send_message(d: AndroidDevice, cfg: dict, attendee: dict, message: str, dry_
                           prefer_editable=True)
             time.sleep(0.5)
         fields = [n for n in d.nodes() if n.editable]
-        if fields:
-            d.tap_node(sorted(fields, key=lambda n: -n.height)[0])
+        search_like = [n for n in fields if any(w in (n.label + n.res_id).lower() for w in SEARCH_WORDS)]
+        fields = [n for n in fields if n not in search_like]
+        if not fields:
+            log["detail"] = "no message field on this screen (only search)"; _recover(d, 3); return log
+        d.tap_node(sorted(fields, key=lambda n: -n.height)[0])
+        d.select_all_delete()
         d.type_text(message)
         time.sleep(0.8)
         log["screenshot"] = d.screenshot(f"/tmp/ca_android_{attendee['name'].replace(' ', '_')}.png")
